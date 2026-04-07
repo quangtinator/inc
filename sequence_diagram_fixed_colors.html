@@ -1,0 +1,105 @@
+<style>
+  body {
+    background-color: #ffffff;
+    color: #1a1a1a;
+  }
+  @media (prefers-color-scheme: dark) {
+    body {
+      background-color: #1a1a1a;
+      color: #e8e6dc;
+    }
+  }
+</style>
+<div id="seq" style="padding: 0.5rem 0"></div>
+<script type="module">
+  import mermaid from "https://esm.sh/mermaid@11/dist/mermaid.esm.min.mjs";
+  const dark = matchMedia("(prefers-color-scheme: dark)").matches;
+  await document.fonts.ready;
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: "base",
+    fontFamily: '"Anthropic Sans", sans-serif',
+    themeVariables: {
+      darkMode: dark,
+      fontSize: "13px",
+      fontFamily: '"Anthropic Sans", sans-serif',
+      lineColor: dark ? "#9c9a92" : "#4a4a4a",
+      textColor: dark ? "#e8e6dc" : "#1a1a1a",
+      actorBkg: dark ? "#3C3489" : "#EEEDFE",
+      actorBorder: dark ? "#7F77DD" : "#534AB7",
+      actorTextColor: dark ? "#EEEDFE" : "#26215C",
+      actorLineColor: dark ? "#9c9a92" : "#4a4a4a",
+      noteBkgColor: dark ? "#085041" : "#E1F5EE",
+      noteBorderColor: dark ? "#1D9E75" : "#0F6E56",
+      noteTextColor: dark ? "#9FE1CB" : "#04342C",
+      activationBorderColor: dark ? "#5DCAA5" : "#0F6E56",
+      activationBkgColor: dark ? "#085041" : "#E1F5EE",
+      sequenceNumberColor: dark ? "#26215C" : "#EEEDFE",
+      labelBoxBkgColor: dark ? "#3C3489" : "#EEEDFE",
+      labelBoxBorderColor: dark ? "#7F77DD" : "#534AB7",
+      labelTextColor: dark ? "#EEEDFE" : "#26215C",
+      loopTextColor: dark ? "#EEEDFE" : "#26215C",
+      signalColor: dark ? "#c2c0b6" : "#1a1a1a",
+      signalTextColor: dark ? "#e8e6dc" : "#1a1a1a",
+    },
+  });
+  const diagram = `sequenceDiagram
+    autonumber
+    participant FE as Frontend
+    participant CTL as Controller
+    participant SVC as Service
+    participant REPO as Repository
+    participant Q as Job Queue
+    participant W as Worker
+    participant ADP as Engine Adapter
+    participant ENG as Opt. Engine
+    participant DB as Database
+
+    Note over FE,CTL: submit phase
+    FE->>CTL: POST /v1/optimizations
+    CTL->>CTL: validate input (400 if invalid)
+    CTL->>SVC: createRequest(dto)
+    SVC->>REPO: save(request, status=PENDING)
+    REPO->>DB: INSERT optimization_request
+    DB-->>REPO: request_id
+    SVC->>Q: enqueue(request_id)
+    CTL-->>FE: 202 Accepted + request_id
+
+    Note over FE,DB: async boundary — worker runs independently
+    FE->>CTL: GET /v1/optimizations/{id} (poll)
+    CTL->>REPO: findById(id)
+    REPO->>DB: SELECT status
+    DB-->>REPO: status=PENDING
+    CTL-->>FE: 200 status=PENDING
+
+    Note over Q,DB: processing phase
+    W->>Q: dequeue job
+    W->>REPO: updateStatus(PROCESSING)
+    REPO->>DB: UPDATE status=PROCESSING
+    W->>ADP: optimize(params, version)
+    ADP->>ENG: HTTP POST /compute
+    Note over ENG: 5-10 sec computation
+    ENG-->>ADP: output_params
+    ADP-->>W: recommendation
+    W->>REPO: saveRecommendation(result, algo_version_id)
+    REPO->>DB: INSERT recommendation
+    W->>REPO: updateStatus(COMPLETED)
+    REPO->>DB: UPDATE status=COMPLETED
+
+    Note over FE,DB: poll returns done
+    FE->>CTL: GET /v1/optimizations/{id} (poll)
+    CTL->>REPO: findById(id)
+    REPO->>DB: SELECT status + recommendation
+    DB-->>REPO: COMPLETED + output_params
+    CTL-->>FE: 200 status=COMPLETED + recommendation
+
+    Note over FE,DB: feedback phase
+    FE->>CTL: POST /v1/feedback
+    CTL->>SVC: submitFeedback(dto)
+    SVC->>REPO: saveFeedback(rating, comment)
+    REPO->>DB: INSERT feedback
+    CTL-->>FE: 201 Created`;
+
+  const { svg } = await mermaid.render("seq-svg", diagram);
+  document.getElementById("seq").innerHTML = svg;
+</script>
